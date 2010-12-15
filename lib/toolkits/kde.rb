@@ -32,22 +32,22 @@ class KDE::Application
     about = KDE::AboutData.new(
       data[:id],
       data[:id],
-      data[:name],
-      data[:version],
-      data[:description],
+      data[:name] || KDE::ki18n(data[:id]),
+      data[:version] || "0.1",
+      data[:description] || KDE::ki18n(""),
       KDE::AboutData::License_GPL,
-      data[:copyright])
-    data[:authors].each do |name, email|
+      data[:copyright] || KDE::ki18n(""))
+    (data[:authors] || []).each do |name, email|
       about.addAuthor(name, KDE::LocalizedString.new, email)
     end
-    data[:contributors].each do |name, contribution|
+    (data[:contributors] || []).each do |name, contribution|
       about.addCredit(name, contribution)
     end
-    about.bug_address = Qt::ByteArray.new(data[:bug_tracker])
+    about.bug_address = Qt::ByteArray.new(data[:bug_tracker] || "")
     
     KDE::CmdLineArgs.init(ARGV, about)
     KDE::CmdLineOptions.new.tap do |opts|
-      data[:options].each do |args|
+      (data[:options] || []).each do |args|
         case args.size
         when 2
           opts.add(args[0], args[1])
@@ -125,11 +125,21 @@ module ActionHandler
                     opts[:text], action_parent).tap do |a|
       action_collection.add_action(name.to_s, a)  
       a.connect(SIGNAL('triggered(bool)'), &blk)
+      a.tool_tip = opts[:tooltip] if opts[:tooltip]
+      a.shortcut = opts[:shortcut] if opts[:shortcut]
     end
   end
   
   def action_parent
     self
+  end
+
+  def plug_action_list(name, actions)
+    plugActionList(name.to_s, actions)
+  end
+
+  def unplug_action_list(name)
+    unplugActionList(name.to_s)
   end
 end
 
@@ -215,6 +225,16 @@ module KDE
         DefineGroup(:name => name)
       end
     end
+  end
+  
+  def self.active_color
+    scheme = KDE::ColorScheme.new(Qt::Palette::Active, KDE::ColorScheme::Window)
+    color = scheme.foreground(KDE::ColorScheme::PositiveText).color
+  end
+  
+  def self.std_shortcut(name)
+    code = KDE::StandardShortcut.send(name.to_s.capitalize)
+    StandardShortcut::shortcut(code)
   end
 end
 

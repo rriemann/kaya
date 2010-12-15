@@ -8,129 +8,156 @@
 require 'observer_utils'
 require 'toolkit'
 
+#
+# A clock keeps track of game time and sends regular updates to a graphical
+# clock component whenever the displayed time needs to change.
+#
+# The clock is based on the idea of _displayed_ time, which is the value in
+# milliseconds that is displayed to the user on a clock with a specified
+# _resolution_. For example, if the remaining time is 13561 milliseconds, and
+# the resolution is 1 second, the displayed time is 14000.
+#
+# In general, the displayed time is the smallest multiple of the resolution
+# which is greater or equal to the actual time.
+#
+# The other important concept is the _step_. This is currently set to the
+# constant 100, and represents the frequency with which the internal timer is
+# fired.
+#
+# The resolution can be set while the clock is running, but only to a multiple
+# of the step.
+#
 class Clock
   include Observable
-  ByoYomi = Struct.new(:time, :periods)
-
-  # main = allotted time
-  # increment = increment per move
-  # byoyomi.time = time per move after main is elapsed
-  # byoyomi.periods = number of times byoyomi.time has to elapse
-  #                   for the byoyomi to end
-  #                   
-  # byoyomi and increment don't work together
-  #                   
-  # all times are in seconds
-  # 
-  def initialize(main, increment, byoyomi = nil, timer_class = Qt::Timer)
-    @main = main
-    @increment = increment
-    if byoyomi
-      @byoyomi = byoyomi.dup
-      @byoyomi_time = @byoyomi.time
-    end
+  STEP = 100
+  
+  attr_reader :resolution
+  attr_accessor :debug
+  
+  #
+  # Create a clock object. Times are expressed in milliseconds.
+  # The timer_class argument can be used to provide a different factory for
+  # the internal timer (the default is Qt::Timer).
+  #
+  def initialize(main, increment, timer_class = Qt::Timer)
+    @rem = main
+    @rem_last = @rem
+    update_displayed
     
+    @increment = increment
+    @resolution = 1000
     @timer = timer_class.new
     @timer.single_shot = true
     @timer.on(:timeout) { tick }
     @running = false
-    @count = 0
-    @elapsed = 0
     @time = Qt::Time.new
+    
   end
   
+  #
+  # Stop the timer.
+  #
+  # The clock keeps track of the portion of step elapsed since the last tick,
+  # and will compensate when resuming.
+  #
   def stop
     if @running
-      @elapsed += @time.elapsed
       @timer.stop
       
-      @main += @increment
+      update_remaining
+      @rem += @increment
+      @displayed += @increment
       
       @running = false
-      fire :timer => { :main => @main }
+      fire :timer => timer
     end
   end
   
+  #
+  # Start or resume the timer.
+  #
   def start
     if not @running
-      # milliseconds for the next tick
-      delta = [0, (@count + 1) * 100 - @elapsed].max
+      @rem_last = @rem
       @time.start
+
       @timer.start(delta)
       @running = true
     end
   end
   
+  #
+  # The current displayed time.
+  #
+  def timer
+    @displayed
+  end
+  
+  #
+  # The main internal method, called every STEP milliseconds to update the
+  # internal state and keep track of elapsed time.
+  #
+  # Fire timer signal when the displayed time is a multiple of resolution.
+  #
   def tick
     return unless @running
     
-    # update counter
-    @count += 1
-    elapsed = false
+    update_remaining
+    @displayed -= STEP
     
-    # update clock state
-    if @count % 10 == 0
-      if @main <= 0
-        # if we get here, there must be
-        # a byoyomi, otherwise the timer would
-        # be stopped
-        @byoyomi.time -= 1
-        if @byoyomi.time <= 0
-          @byoyomi.periods -= 1
-          @byoyomi.time = @byoyomi_time
-          if @byoyomi.periods <= 0
-            elapsed = true
-          end
-        end
-      else
-        @main -= 1
-        if @main <= 0 and (not @byoyomi)
-          elapsed = true
-        end
-      end
-      
-      if elapsed
-        fire :elapsed
-      else
-        fire :timer => timer
-      end
+    if @displayed % @resolution == 0
+      fire :timer => timer
     end
     
-    if not elapsed
-      # schedule next tick
-      delta = [0, (@count + 1) * 100 - @elapsed - @time.elapsed].max
-      @timer.start(delta)
-    end
+    @timer.start(delta)
   end
   
-  def timer
-    if @main > 0 or (not @byoyomi)
-      { :main => @main }
-    else
-      { :byoyomi => @byoyomi.dup }
-    end
-  end
-  
-  def set_time(milliseconds)
-    # update time
-    @main = milliseconds / 1000
-
-    # stop timer if we are below 0
-    if @main <= 0
-      @main = 0
-      @timer.stop
-      @running = false
-    end
+  #
+  # Forcibly set a time for this clock.
+  #
+  # As a side effect, this method causes the timer to stop.
+  #
+  def set_time(rem)
+    @rem = rem
+    update_displayed
     
-    # reset counter
-    @count = 0
-    @elapsed = milliseconds % 1000
-    @time.restart
+    # always stop the timer when forcing a time
+    @timer.stop
+    @running = false
     
     fire :timer => timer
   end
   
+  #
+  # Whether the clock is running
+  #
   def running?
     @running
+  end
+  
+  #
+  # Set resolution in milliseconds.
+  #
+  # The value must be a multiple of STEP.
+  #
+  def resolution=(value)
+    if value <= 0 || (value % STEP != 0)
+      raise "Invalid resolution"
+    end
+    @resolution = value
+  end
+  
+  private
+  
+  def update_remaining
+    @rem = @rem_last - @time.elapsed
+  end
+  
+  def update_displayed
+    @displayed = @rem + STEP - 1 - (@rem - 1) % STEP
+  end
+  
+  def delta
+    [0, STEP - @displayed + @rem].max
   end
 end

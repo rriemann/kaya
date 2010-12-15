@@ -20,6 +20,9 @@ class History
   class Item < Struct.new(:state, :move)
     attr_accessor :text
   end
+  class UnknownState
+  end
+
   OutOfBound = Class.new(Exception)
 
   def initialize(state)
@@ -40,6 +43,10 @@ class History
       op.move(item)
     end
     op.execute :extra => opts
+  end
+  
+  def add_placeholder
+    add_move(UnknownState.new, nil, :quiet => true)
   end
   
   def forward
@@ -86,6 +93,16 @@ class History
     fire :force_update
   end
   
+  def move=(value)
+    @history[current].move = value
+    fire :force_update
+  end
+  
+  def text=(value)
+    @history[current].text = value
+    fire :force_update
+  end
+  
   def set_item(state, move)
     @history[current] = Item.new(state, move)
     fire :force_update
@@ -113,11 +130,25 @@ class History
     @history.size
   end
   
-  def [](index)
+  def inspect
+    @history.inspect
+  end
+  
+  def [](index = nil)
+    index ||= @current
     if index >= @history.size || index < 0
       raise OutOfBound 
     end
     @history[index]
+  end
+  
+  def valid_index?(i)
+    not @history[i].state.is_a?(UnknownState)
+  end
+  
+  def path_defined?(from, to)
+    from, to = [from, to].sort
+    (from..to).all? { |i| valid_index?(i) }
   end
   
   # item interface
@@ -135,7 +166,7 @@ class History
     @current
   end
   
-  def remove_items_at(index)
+  def remove_items_at(index, opts = { })
     @current = index - 1
     fire :current_changed
     

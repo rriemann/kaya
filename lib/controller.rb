@@ -24,6 +24,7 @@ class Controller
   attr_reader :controlled
   attr_reader :table
   attr_reader :policy
+  attr_reader :dirty
   attr_accessor :name
   attr_accessor :premove
   attr_reader :active_actions
@@ -86,15 +87,6 @@ class Controller
     match.history.on(:force_update) { refresh :force => true }
     match.history.on(:new_move) do |data|
       refresh(data[:opts])
-      if match.time_running?
-        @clocks.each do |player, clock|
-          if data[:state].turn == player
-            clock.start
-          else
-            clock.stop
-          end
-        end
-      end
     end
     
     @clocks[match.game.players.first].active = true
@@ -104,6 +96,7 @@ class Controller
       @board.highlight(match.history.move)
     end
     set_active_actions(@current)
+    fire :reset
   end
   
   def back
@@ -131,16 +124,33 @@ class Controller
   # 
   def refresh(opts = { })
     return unless match
+    return unless match.valid_state?
+    
     index = match.history.current
     return if index == @current && (!opts[:force])
     set_active_actions(index)
     
     fire :activity
     
+    # update active clock
     @clocks.each do |color, clock|
       clock.active = match.history.state.turn == color
     end
-    if opts[:instant] || (index == @current && opts[:force])
+    
+    # update running clock
+    if match.time_running?
+      @clocks.each do |player, clock|
+        if match.history.state.turn == player
+          clock.start
+        else
+          clock.stop
+        end
+      end
+    end
+    
+    if opts[:instant] || 
+       (index == @current && opts[:force]) ||
+       (not match.history.path_defined?(@current, index))
       anim = @animator.warp(match.history.state, opts)
       perform_animation anim
     elsif index > @current
@@ -281,9 +291,12 @@ class Controller
   end
     
   def on_time(time)
-    time.each do |pl, seconds|
-      @clocks[pl].clock ||= Clock.new(seconds, 0, nil)
-      @clocks[pl].clock.set_time(seconds)
+    time.each do |pl, ms|
+      if @clocks[pl].clock
+        @clocks[pl].clock.set_time(ms)
+      else
+        @clocks[pl].clock ||= Clock.new(ms, 0, Qt::Timer)
+      end
     end
   end
   
@@ -360,6 +373,8 @@ class Controller
   def perform!(move, opts = {})
     turn = match.history.state.turn
     match.move(self, move, opts)
+    fire :dirty unless @dirty
+    @dirty = true
   end
   
   def cancel_drop(data)

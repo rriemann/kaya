@@ -9,6 +9,7 @@ require 'toolkit'
 require 'plugins/plugin'
 require 'plugins/shadow'
 require 'plugins/background'
+require 'require_bundle'
 require_bundle 'shogi', 'type'
 
 class ShogibanBackground
@@ -90,7 +91,7 @@ class ShogiPieces
         kanji.render(p)
       end
     end
-    if opts.has_key? :shadow
+    if opts.fetch(:shadow, true)
       @loader = with_shadow(@loader)
     end
     @flipped = false

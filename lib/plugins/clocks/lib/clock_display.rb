@@ -25,11 +25,18 @@ module ClockDisplay
   end
   
   def start
-    @clock.start if @clock
+    if @clock
+      @clock.start
+    else
+      # save 'started' state for when the clock is added
+      @started = true
+    end
     self.active = true
   end
   
   def stop
+    # cancel possible 'started' state
+    @started = false
     @clock.stop if @clock
     self.active = false
   end
@@ -57,14 +64,26 @@ module ClockDisplay
     end
     
     @clock = clock
+    
+    # start the clock if the display was in the 'started'
+    # state before the clock was added
+    @clock.start if @started
+    @started = false
+    
     clock.add_observer(self)
     on_timer(clock.timer)
   end
   
-  def on_timer(data)
-    min = data[:main] / 60
-    sec = data[:main] % 60
+  def on_timer(ms)
+    neg = ms < 0
+    sign = ms <= -1000
+    ms = -ms if neg
     
-    @items[:time].text = "%02d:%02d" % [min, sec]
+    min = ms / 60000
+    ms -= min * 60000
+    sec = ms / 1000
+    ms -= sec * 1000
+    sec += 1 if ms > 0 and (not neg)
+    @items[:time].text = "#{sign ? '-' : ''}%02d:%02d" % [min, sec]
   end
 end

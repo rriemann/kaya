@@ -133,9 +133,21 @@ module MatchHelper
     # reset controller
     user.reset(match)
     
+    # pad history with placeholders
+    style12.move_index.times do
+      match.history.add_placeholder
+    end
+    match.history.current = match.history.size - 1
+    
     # set initial state and time
-    unless match_info[:icsapi].same_state(match.state, style12.state)
+    unless match.valid_state? and 
+           match_info[:icsapi].same_state(match.state, style12.state)
       match.history.state = style12.state
+    end
+    unless match.history.move
+      move = match_info[:icsapi].parse_last_move(style12.last_move, style12.state.turn)
+      match.history.move = move
+      match.history.text = style12.last_move_san
     end
     match.update_time(style12.time)
     
@@ -264,7 +276,8 @@ class ObservingMatchHelper
     match = Match.new(Game.dummy,
                       :kind => :ics,
                       :editable => false,
-                      :navigable => false)
+                      :navigable => false,
+                      :time_running => true)
     match.on(:close) { close_match(handler, match_info) }
     match_info.merge(:match => match)
   end

@@ -9,6 +9,8 @@ require 'observer_utils'
 
 class MultiView < KDE::TabWidget
   attr_reader :index
+  attr_accessor :clean
+  
   include Observable
   include Observer
   include Enumerable
@@ -21,7 +23,7 @@ class MultiView < KDE::TabWidget
     @index = -1
     tab_bar.visible = false
     tab_bar.tabs_closable = true
-    on(:current_changed) {|i| self.index = i; fire :changed }
+    on(:current_changed, ["int"]) {|i| self.index = i; fire :changed }
     tab_bar.on(:tab_close_requested) {|i| delete_at(i) }
   end
   
@@ -30,7 +32,7 @@ class MultiView < KDE::TabWidget
       @index = value
       self.current_index = value
       @movelist_stack.current_index = value
-      current.active = false
+      on_activity(current, false)
     end
   end
   
@@ -51,11 +53,6 @@ class MultiView < KDE::TabWidget
     nil
   end
   
-  def set_tab_text(i, name)
-    puts "name = #{name}"
-    super(i, name)
-  end
-  
   def current
     if @index != -1
       @views[@index]
@@ -69,13 +66,23 @@ class MultiView < KDE::TabWidget
   end
   
   def create(opts =  { })
-    table = @factories[:table].new(self)
-    controller = @factories[:controller].new(table)
-    movelist = @factories[:movelist].new(controller)
-    
-    v = View.new(table, controller, movelist)
-    add(v, opts)
-    v
+    if @clean and not opts[:force]
+      @clean = false
+      if opts[:name]
+        set_tab_text(index, opts[:name])
+        fire :changed
+      end
+      current
+    else    
+      @clean = false
+      table = @factories[:table].new(self)
+      controller = @factories[:controller].new(table)
+      movelist = @factories[:movelist].new(controller)
+      
+      v = View.new(table, controller, movelist)
+      add(v, opts)
+      v
+    end
   end
   
   def add(view, opts = { })
@@ -116,17 +123,19 @@ class MultiView < KDE::TabWidget
     @views.each(&blk)
   end
   
-  def on_active(view, value)
+  def on_activity(view, value = true)
     i = find { |v| v == view }
     return unless i
     @@base_color ||= tab_bar.tab_text_color(i)
     
     if i != @index && value
-      scheme = KDE::ColorScheme.new(Qt::Palette::Active, KDE::ColorScheme::Window)
-      color = scheme.foreground(KDE::ColorScheme::PositiveText).color
-      tab_bar.set_tab_text_color(i, color)
+      tab_bar.set_tab_text_color(i, KDE::active_color)
     else
       tab_bar.set_tab_text_color(i, @@base_color)
     end
+  end
+  
+  def on_dirty(view, value = true)
+    @clean = false
   end
 end

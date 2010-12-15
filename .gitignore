@@ -6,3 +6,6 @@
 build
 *.swp
 tags
+*.rbc
+*list
+rc.cpp
